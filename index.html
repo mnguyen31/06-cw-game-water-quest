@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>Water Quest</title>
+  <link href="style.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Water Quest</h1>
+    <p class="game-instructions">Collect 15 water jugs. Turn on obstacles for an extra challenge.</p>
+    <div class="stats">
+      <p>Cans Collected: <span id="current-cans">0</span></p>
+      <p>Time Left: <span id="timer">30</span>s</p>
+    </div>
+    <label class="challenge-toggle" for="obstacles-enabled">
+      <input type="checkbox" id="obstacles-enabled">
+      Enable obstacle mode
+    </label>
+    <div id="achievements" class="achievement"></div>
+    <div class="game-grid"></div>
+    <div class="controls">
+      <button id="start-game">Start Game</button>
+      <button id="reset-game" type="button">Reset</button>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
