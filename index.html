@@ -9,11 +9,20 @@
 <body>
   <div class="container">
     <h1>Water Quest</h1>
-    <p class="game-instructions">Collect 15 water jugs. Turn on obstacles for an extra challenge.</p>
+    <p class="game-instructions" id="game-instructions">Collect water jugs before time runs out. Turn on obstacles for an extra challenge.</p>
     <div class="stats">
       <p>Cans Collected: <span id="current-cans">0</span></p>
       <p>Time Left: <span id="timer">30</span>s</p>
+      <p>Goal: <span id="goal-cans">15</span></p>
     </div>
+    <label class="difficulty-select" for="difficulty-level">
+      Difficulty
+      <select id="difficulty-level">
+        <option value="easy">Easy</option>
+        <option value="normal" selected>Normal</option>
+        <option value="hard">Hard</option>
+      </select>
+    </label>
     <label class="challenge-toggle" for="obstacles-enabled">
       <input type="checkbox" id="obstacles-enabled">
       Enable obstacle mode
@@ -24,6 +33,11 @@
       <button id="start-game">Start Game</button>
       <button id="reset-game" type="button">Reset</button>
     </div>
+    <footer class="charity-footer">
+      <p>Learn more and support clean water projects:</p>
+      <a href="https://www.charitywater.org/" target="_blank" rel="noopener noreferrer">charity: water website</a>
+      <a href="https://www.charitywater.org/donate" target="_blank" rel="noopener noreferrer">Donate now</a>
+    </footer>
   </div>
   <script src="script.js"></script>
 </body>
