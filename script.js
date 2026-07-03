@@ -1,16 +1,42 @@
 // Game configuration and state variables
-const GOAL_CANS = 15;        // Total items needed to collect
-const MILESTONES = [5, 10, 15];
-const GAME_DURATION = 40;
+const DIFFICULTIES = {
+  easy: {
+    label: 'Easy',
+    goalCans: 10,
+    duration: 30,
+    spawnRate: 700
+  },
+  normal: {
+    label: 'Normal',
+    goalCans: 15,
+    duration: 30,
+    spawnRate: 400
+  },
+  hard: {
+    label: 'Hard',
+    goalCans: 20,
+    duration: 30,
+    spawnRate: 300
+  }
+};
 const OBSTACLE_CHANCE = 0.5;
-const BASE_SPAWN_RATE = 650;
 const CONFETTI_COLORS = ['#ffc907', '#003b66', '#77a8bb', '#fed8c1', '#bf6c46', '#cbccd1'];
+const MILESTONE_MESSAGES = [
+  { id: 'quarter', progress: 0.25, message: 'Nice start! You are 25% there.' },
+  { id: 'half', progress: 0.5, message: 'Halfway there!' },
+  { id: 'three-quarters', progress: 0.75, message: 'Almost there! 75% complete.' },
+  { id: 'goal', progress: 1, message: 'Victory! You delivered enough water to win.' }
+];
 let currentCans = 0;         // Current number of items collected
 let gameActive = false;      // Tracks if game is currently running
 let spawnInterval;          // Holds the interval for spawning items
 let timerInterval;
 let confettiTimeout;
-let timeLeft = GAME_DURATION;
+let backgroundFlashTimeout;
+let audioContext;
+let selectedDifficulty = 'normal';
+let activeGoalCans = DIFFICULTIES[selectedDifficulty].goalCans;
+let timeLeft = DIFFICULTIES[selectedDifficulty].duration;
 let obstacleMode = false;
 const reachedMilestones = new Set();
 
@@ -22,8 +48,32 @@ function updateTimerDisplay() {
   document.getElementById('timer').textContent = timeLeft;
 }
 
+function updateGoalDisplay() {
+  document.getElementById('goal-cans').textContent = activeGoalCans;
+}
+
+function updateInstructions() {
+  const instruction = document.getElementById('game-instructions');
+  const config = DIFFICULTIES[selectedDifficulty];
+  instruction.textContent =
+    config.label + ' mode: collect ' +
+    config.goalCans +
+    ' jugs in ' +
+    config.duration +
+    's. Turn on obstacles for an extra challenge.';
+}
+
+function applyDifficultySettings() {
+  const config = DIFFICULTIES[selectedDifficulty];
+  activeGoalCans = config.goalCans;
+  timeLeft = config.duration;
+  updateGoalDisplay();
+  updateTimerDisplay();
+  updateInstructions();
+}
+
 function getSpawnRate() {
-  return BASE_SPAWN_RATE;
+  return DIFFICULTIES[selectedDifficulty].spawnRate;
 }
 
 function restartSpawnLoop() {
@@ -76,6 +126,45 @@ function launchConfetti() {
   }, 3800);
 }
 
+function flashBackgroundBlue() {
+  clearTimeout(backgroundFlashTimeout);
+  document.body.classList.add('flash-blue-bg');
+  backgroundFlashTimeout = setTimeout(function () {
+    document.body.classList.remove('flash-blue-bg');
+  }, 1000);
+}
+
+function playJugPing() {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+
+  if (!audioContext) {
+    audioContext = new AudioCtx();
+  }
+
+  if (audioContext.state === 'suspended') {
+    audioContext.resume();
+  }
+
+  const now = audioContext.currentTime;
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(880, now);
+  oscillator.frequency.exponentialRampToValueAtTime(1320, now + 0.08);
+
+  gainNode.gain.setValueAtTime(0.0001, now);
+  gainNode.gain.exponentialRampToValueAtTime(0.16, now + 0.01);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+
+  oscillator.start(now);
+  oscillator.stop(now + 0.14);
+}
+
 function startTimer() {
   clearInterval(timerInterval);
   timerInterval = setInterval(function () {
@@ -97,13 +186,16 @@ function setFeedback(message, isWarning) {
 }
 
 function checkMilestones() {
-  MILESTONES.forEach(function (milestone) {
-    if (currentCans >= milestone && !reachedMilestones.has(milestone)) {
-      reachedMilestones.add(milestone);
-      if (milestone === GOAL_CANS) {
-        setFeedback('Victory! You delivered enough water to win.', false);
+  MILESTONE_MESSAGES.forEach(function (milestone) {
+    const threshold = Math.max(1, Math.ceil(activeGoalCans * milestone.progress));
+
+    // Trigger each milestone once when the player reaches its threshold.
+    if (currentCans >= threshold && !reachedMilestones.has(milestone.id)) {
+      reachedMilestones.add(milestone.id);
+      if (milestone.id === 'goal') {
+        setFeedback(milestone.message, false);
       } else {
-        setFeedback('Milestone reached: ' + milestone + ' jugs collected!', false);
+        setFeedback(milestone.message + ' (' + currentCans + '/' + activeGoalCans + ')', false);
       }
     }
   });
@@ -123,24 +215,56 @@ function createGrid() {
 // Ensure the grid is created when the page loads
 createGrid();
 
+function removeItemFromCell(cell, removalClass) {
+  const wrapper = cell.querySelector('.water-can-wrapper');
+  if (!wrapper) return;
+
+  wrapper.classList.add(removalClass);
+  setTimeout(function () {
+    if (wrapper.parentElement === cell) {
+      wrapper.remove();
+    }
+  }, 180);
+}
+
+function showImpact(cell, isWarning) {
+  const impact = document.createElement('span');
+  impact.className = 'impact-pop ' + (isWarning ? 'bad' : 'good');
+  cell.appendChild(impact);
+
+  setTimeout(function () {
+    impact.remove();
+  }, 220);
+}
+
 // Spawns a new item in a random grid cell
 function spawnWaterCan() {
   if (!gameActive) return; // Stop if the game is not active
   const cells = document.querySelectorAll('.grid-cell');
   
   // Clear all cells before spawning a new water can
-  cells.forEach(cell => (cell.innerHTML = ''));
+  cells.forEach(function (cell) {
+    const existingWrapper = cell.querySelector('.water-can-wrapper');
+    if (existingWrapper) {
+      existingWrapper.remove();
+    }
+  });
 
   // Select a random cell from the grid to place the water can
   const randomCell = cells[Math.floor(Math.random() * cells.length)];
   const spawnObstacle = obstacleMode && Math.random() < OBSTACLE_CHANCE;
 
-  // Use a template literal to create the wrapper and water-can element
-  randomCell.innerHTML = `
-    <div class="water-can-wrapper">
-      <div class="${spawnObstacle ? 'obstacle' : 'water-can'}">${spawnObstacle ? '!' : ''}</div>
-    </div>
-  `;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'water-can-wrapper';
+
+  const item = document.createElement('div');
+  item.className = spawnObstacle ? 'obstacle' : 'water-can';
+  if (spawnObstacle) {
+    item.textContent = '!';
+  }
+
+  wrapper.appendChild(item);
+  randomCell.appendChild(wrapper);
 }
 
 // Initializes and starts a new game
@@ -148,13 +272,23 @@ function startGame() {
   if (gameActive) return; // Prevent starting a new game if one is already active
   gameActive = true;
   clearConfetti();
+  selectedDifficulty = document.getElementById('difficulty-level').value;
   obstacleMode = document.getElementById('obstacles-enabled').checked;
+  activeGoalCans = DIFFICULTIES[selectedDifficulty].goalCans;
   currentCans = 0;
-  timeLeft = GAME_DURATION;
+  timeLeft = DIFFICULTIES[selectedDifficulty].duration;
   reachedMilestones.clear();
   updateCounterDisplay();
+  updateGoalDisplay();
   updateTimerDisplay();
-  setFeedback(obstacleMode ? 'Obstacle mode enabled. Watch out for hazards.' : 'Game on! Click water jugs to collect them.', false);
+  setFeedback(
+    (obstacleMode ? 'Obstacle mode enabled. ' : '') +
+      DIFFICULTIES[selectedDifficulty].label +
+      ' mode started. Reach ' +
+      activeGoalCans +
+      ' jugs.',
+    false
+  );
   createGrid(); // Set up the game grid
   spawnWaterCan();
   restartSpawnLoop();
@@ -170,11 +304,11 @@ function endGame() {
 function resetGame() {
   endGame();
   clearConfetti();
+  selectedDifficulty = document.getElementById('difficulty-level').value;
+  applyDifficultySettings();
   currentCans = 0;
-  timeLeft = GAME_DURATION;
   reachedMilestones.clear();
   updateCounterDisplay();
-  updateTimerDisplay();
   setFeedback('Game reset. Press Start Game to play.', false);
   createGrid();
 
@@ -196,7 +330,8 @@ document.querySelector('.game-grid').addEventListener('click', function (event) 
     updateCounterDisplay();
     setFeedback('Obstacle hit! You lost 1 jug.', true);
     flashStat('bad');
-    clickedCell.innerHTML = '';
+    removeItemFromCell(clickedCell, 'item-removed-bad');
+    showImpact(clickedCell, true);
     return;
   }
 
@@ -205,17 +340,29 @@ document.querySelector('.game-grid').addEventListener('click', function (event) 
 
   currentCans += 1;
   updateCounterDisplay();
+  playJugPing();
+  flashBackgroundBlue();
   setFeedback('Great catch! Keep going.', false);
   flashStat('good');
   checkMilestones();
-  clickedCell.innerHTML = '';
+  removeItemFromCell(clickedCell, 'item-removed-good');
+  showImpact(clickedCell, false);
 
-  if (currentCans >= GOAL_CANS) {
+  if (currentCans >= activeGoalCans) {
     launchConfetti();
     endGame();
+  }
+});
+
+document.getElementById('difficulty-level').addEventListener('change', function (event) {
+  selectedDifficulty = event.target.value;
+  if (!gameActive) {
+    applyDifficultySettings();
   }
 });
 
 // Set up click handler for the start button
 document.getElementById('start-game').addEventListener('click', startGame);
 document.getElementById('reset-game').addEventListener('click', resetGame);
+
+applyDifficultySettings();
